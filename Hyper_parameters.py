@@ -13,8 +13,9 @@ ECG Signal Definition
 ************************************************************************
 1. Filter Duration (Width):     100ms
 2. inputECG Duration(Width):    3s = 3000ms
-3. num_data (Total Samples):    10000
+3. num_train_data:              10000
 4. num_labels (Total Labels):   30
+5. num_test_data:               100
 ************************************************************************
 Deep Model Related
     --- Residual Block Conv Layer: BN->ReLu[->dropout]->conv
@@ -72,9 +73,6 @@ def arg_parser():
     parser.add_argument('--train_batch_size', type=int, default=20,
         help="Training Batch Size [20]"
     )
-    parser.add_argument('--test_batch_size', type=int, default=20,
-        help="Testing Batch Size [20]"
-    )
     parser.add_argument('--init_lr', type=float, default=0.1,
         help="initial learning rate [0.1]"
     )
@@ -114,10 +112,13 @@ def arg_parser():
     parser.add_argument('--load_all_data_to_memory', type=bool, default=True,
         help="If [True], we load all training data into memory in preprocessing step"
     )
-    parser.add_argument('--num_data', type=int, default=5000,
-        help="Total Number of data [5000]")
+    parser.add_argument('--num_train_data', type=int, default=10000,
+        help="Total Number of data [10000]")
     parser.add_argument('--num_labels', type=int, default=30,
         help="Number of labels [30]"
+    )
+    parser.add_argument('--num_test_data',type=int,default=100,
+        help="Number of test data [100]"
     )
 
     return parser.parse_args()

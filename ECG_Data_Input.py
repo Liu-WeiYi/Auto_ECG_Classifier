@@ -10,11 +10,22 @@ import pickle
 import sys
 
 # TODO: define this function!!
-def load_all_data_to_memory():
+def load_all_train_data_to_memory():
     '''
     Load all data into memory
 
-    :return data
+    :return data, labels
+    '''
+    data = None
+    labels = None
+    return data, labels
+
+# TODO: load all teset data
+def load_all_test_data_to_memory():
+    '''
+    Load all test data into memory
+
+    :return data, labels
     '''
     data = None
     labels = None

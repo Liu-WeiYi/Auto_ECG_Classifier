@@ -30,7 +30,6 @@ class ECG_Classifier:
         self.ckpt_path          = args.ckpt_path
         # resnet Related
         self.train_batch_size   = args.train_batch_size # default [20]
-        self.test_batch_size    = args.test_batch_size  # default [20]
         self.epoch              = args.epoch            # default [10000]
         self.init_lr            = args.init_lr          # default [0.1]
         self.lr_decay_value     = args.lr_decay_rate    # default [0.96]
@@ -45,8 +44,9 @@ class ECG_Classifier:
         self.inputECG_Depth     = args.inputECG_Depth
         # data related
         self.load_data_to_mem   = args.load_all_data_to_memory
-        self.num_data           = args.num_data
+        self.num_train_data     = args.num_train_data
         self.num_labels         = args.num_labels
+        self.num_test_data      = args.num_test_data
 
         # Define Place Holders
         """
@@ -66,11 +66,11 @@ class ECG_Classifier:
         # 2. Placeholder for Testing
         self.ECG_test_placeholder = tf.placeholder(
           dtype = tf.float32,
-          shape=[self.test_batch_size, self.inputECG_Duration, self.inputECG_Depth]
+          shape=[self.num_test_data, self.inputECG_Duration, self.inputECG_Depth]
         )
         self.ECG_test_labels_placeholder = tf.placeholder(
           dtype=tf.int32,
-          shape=[self.test_batch_size]
+          shape=[self.num_test_data]
         )
 
     # ----------------------------- #
@@ -152,20 +152,19 @@ class ECG_Classifier:
             sess.run(init)
 
         print('======================================================')
-        sys.exit()
         print('Training Process Start...')
-        all_data = None
-        all_labels = None
+        all_train_data = None
+        all_train_labels = None
         if self.load_data_to_mem is True:
             print('-- Load all data into memory')
-            all_data,all_labels = load_all_data_to_memory()
-            if all_data != None and all_labes != None:
-                assert all_data.shape[0] == len(all_labels)
+            all_train_data,all_train_labels = load_all_train_data_to_memory()
+            if all_train_data != None and all_labes != None:
+                assert all_train_data.shape[0] == len(all_train_labels)
         else:
             #TODO: load data seperately
             pass
 
-        trainable_data_steps = ceil(self.num_data/self.train_batch_size)
+        trainable_data_steps = ceil(self.num_train_data/self.train_batch_size)
 
         for epoch in range(self.epoch):
             for offset in range(trainable_data_steps):
@@ -173,9 +172,9 @@ class ECG_Classifier:
                 batch_ECGs, batch_labels = prepare_train_data(
                   offset = offset,
                   batch_size = self.train_batch_size,
-                  total_num_data = self.num_data,
-                  all_data = all_data,
-                  all_labels=all_labels
+                  total_num_data = self.num_train_data,
+                  all_data = all_train_data,
+                  all_labels=all_train_labels
                 )
                 # train current batch
                 _, current_loss, current_lr, accuracy, step = sess.run(
@@ -195,8 +194,41 @@ class ECG_Classifier:
 
 
     # -----------------------------
-    def test(self, ckpt_path):
-        print('haha')
+    def test(self, ckpt_path=''):
+        print('======================================================')
+        print('Testing Process Begin...')
+
+        init = tf.global_variables_initializer()
+        sess = tf.Session()
+        # 0. load trained model
+        assert ckpt_path != ''
+        saver = tf.train.Saver(tf.global_variables())
+        print('-- Use Trained model from %s'%self.ckpt_path)
+        saver.restore(sess, self.ckpt_path)
+
+        # 1. reuse constructed model
+        logits = self.modelConstruction(
+          input_tensor_batch = self.ECG_test_placeholder,
+          reuseModel=True
+        )
+
+        # 2. load test data
+        all_test_data, all_test_label = load_all_test_data_to_memory()
+        assert all_test_data.shape[0] == len(all_test_label)
+
+        # 3. evaluate test accuracy
+        test_accuracy = sess.run(
+          fetches=[self.__accuracy(all_test_label,logits)],
+          feed_dict={
+            self.ECG_test_placeholder:all_test_data,
+            self.ECG_test_labels_placeholder:all_test_label
+          }
+        )
+        print('Test Accuray is :\t%.3f'%test_accuracy)
+
+
+
+
 
 
     # ----------------------------- #
