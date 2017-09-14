@@ -4,10 +4,12 @@
   Author:   weiyiliu --<weiyiliu@us.ibm.com>
   Purpose:  Auto ECG Classifier
   Created: 09/06/17
+  Updated:  09/13/17 --- conv1d
 """
 
 import tensorflow as tf
 from datetime import datetime
+from math import ceil
 
 import resnet_utils as utils
 from ECG_Data_Input import *
@@ -27,39 +29,44 @@ class ECG_Classifier:
         self.use_ckpt           = args.use_ckpt
         self.ckpt_path          = args.ckpt_path
         # resnet Related
-        self.train_batch_size   = args.train_batch_size
-        self.test_batch_size    = args.test_batch_size
-        self.epoch              = args.epoch
-        self.init_lr            = args.init_lr
-        self.lr_decay_value     = args.lr_decay_value
-        self.lr_decay_step      = args.lr_decay_step
+        self.train_batch_size   = args.train_batch_size # default [20]
+        self.test_batch_size    = args.test_batch_size  # default [20]
+        self.epoch              = args.epoch            # default [10000]
+        self.init_lr            = args.init_lr          # default [0.1]
+        self.lr_decay_value     = args.lr_decay_rate    # default [0.96]
+        self.lr_decay_step      = args.lr_decay_step    # default [10000]
         self.regulation_decay   = args.regularization_weight_decay
         self.residual_block_num = args.residual_block_num
-        self.filter_Duration    = args.filter_Duration
-        self.filter_Height      = args.filter_Height
+        self.filter_Duration    = args.filter_Duration  # default [100]
         self.filter_Depth       = args.filter_Depth
-        self.inputECG_Duration  = args.inputECG_Duration
-        self.inputECG_Height    = args.inputECG_Height
+        self.filter_init        = args.init_f_channels  # default [32]
+        self.keep_prob          = args.keep_prob        # default [0.5]
+        self.inputECG_Duration  = args.inputECG_Duration# default [3000]
         self.inputECG_Depth     = args.inputECG_Depth
         # data related
-        self.load_data_to_mem   = args.load_data_to_mem
+        self.load_data_to_mem   = args.load_all_data_to_memory
         self.num_data           = args.num_data
         self.num_labels         = args.num_labels
 
         # Define Place Holders
-        # 1. For Train Placeholder
+        """
+        For Conv1d:
+          training Sample:  [batch, in_width, in_channels]
+          training filter:  [filter_width, in_channels, out_channels]
+        """
+        # 1. Placeholder for Training
         self.ECG_train_placeholder = tf.placeholder(
           dtype=tf.float32,
-          shape=[self.train_batch_size, self.inputECG_Height, self.inputECG_Duration, self.inputECG_Depth]
+          shape=[self.train_batch_size, self.inputECG_Duration, self.inputECG_Depth]
         )
         self.ECG_train_labels_placeholder = tf.placeholder(
           dtype=tf.int32,
           shape=[self.train_batch_size]
         )
-        # 2. For Test Placehoder
+        # 2. Placeholder for Testing
         self.ECG_test_placeholder = tf.placeholder(
           dtype = tf.float32,
-          shape=[self.test_batch_size, self.inputECG_Height, self.inputECG_Duration, self.inputECG_Depth]
+          shape=[self.test_batch_size, self.inputECG_Duration, self.inputECG_Depth]
         )
         self.ECG_test_labels_placeholder = tf.placeholder(
           dtype=tf.int32,
@@ -76,11 +83,12 @@ class ECG_Classifier:
         '''
         Construct model with input_tensor.
 
-        :param ConstructFlag: Tell model to construct or not.
-          1. False We need to construct the model.
-          2. True We can reuse the constructed model.
+        :param: input_tensor_batch [batch_size, ECG_Duration, ECG_Depth]
+        :param: reuseModel False We need to construct the model.
+          --- 1. False We need to construct the model.
+          --- 2. True We can reuse the constructed model.
 
-        :return logits: return constructed model output
+        :return: logits: return constructed model output
         '''
         print('======================================================')
         print('Model Construction...')
@@ -106,6 +114,8 @@ class ECG_Classifier:
         model_loss.shape = []
         Hence, we need to add n (32) times of the model_loss and regu_losses
         '''
+        # ∵ model_loss.shape = 1
+        # ∴ [model_loss] + regu_losses is needed!
         loss = tf.add_n([model_loss]+regu_losses)
 
         global_step = tf.Variable(initial_value=0, trainable=False)
@@ -113,8 +123,8 @@ class ECG_Classifier:
         decayed_lr = tf.train.exponential_decay(
           learning_rate = self.init_lr,
           global_step=global_step,
-          decay_steps=10000,
-          decay_rate=0.96
+          decay_steps=self.lr_decay_step,
+          decay_rate=self.lr_decay_value
         )
 
         # 4. Define optimization function
@@ -126,33 +136,36 @@ class ECG_Classifier:
           global_step=global_step
         )
 
-
         print('======================================================')
+        print('-- Total training variables num:',len(tf.trainable_variables()))
         print('Training Process Init...')
 
-        saver = tf.train.Saver(tf.global_variables())
         init = tf.global_variables_initializer()
         sess = tf.Session()
 
         # Load from a checkpoint
         if self.use_ckpt is True:
+            saver = tf.train.Saver(tf.global_variables())
             print('Use pre-trained model from %s'%self.ckpt_path)
             saver.restore(sess, self.ckpt_path)
         else:
             sess.run(init)
 
         print('======================================================')
+        sys.exit()
         print('Training Process Start...')
         all_data = None
         all_labels = None
         if self.load_data_to_mem is True:
             print('-- Load all data into memory')
             all_data,all_labels = load_all_data_to_memory()
+            if all_data != None and all_labes != None:
+                assert all_data.shape[0] == len(all_labels)
+        else:
+            #TODO: load data seperately
+            pass
 
-        if all_data != None and all_labes != None:
-            assert all_data.shape[0] == len(all_labels)
-
-        trainable_data_steps = self.num_data // self.train_batch_size
+        trainable_data_steps = ceil(self.num_data/self.train_batch_size)
 
         for epoch in range(self.epoch):
             for offset in range(trainable_data_steps):
@@ -181,11 +194,6 @@ class ECG_Classifier:
             print('%s, Epoch[%d]: Current learning rate %.3f, loss %.8f, accuracy %.3f%%' %(datetime.time(),epoch+1, learning_rate, loss, accuracy*100))
 
 
-
-
-
-
-
     # -----------------------------
     def test(self, ckpt_path):
         print('haha')
@@ -194,28 +202,34 @@ class ECG_Classifier:
     # ----------------------------- #
     # Private Funcs
     # __resnet_structure(input_tensor_batch, reuse=False)
-    # __loss()
+    # __loss(logits, label_placeholder)
+    # __accuracy(logits, labels)
     # ----------------------------- #
     def __resnet_structure(self, input_tensor_batch, reuse=False):
         '''
-        The main function that defines the ResNet. total layers = 1 + 2n + 2n + 2n +1 = 6n + 2
+        The main function that defines the ResNet.
+          * original resnet:  total layers = 1 + 2n + 2n + 2n +1 = 6n + 2
+          * standford resnet: total layers = 1 + 15*2 = 30
 
-        :param input_tensor_batch: 4D tensor to input
-          +for train: ECG_placeholder;
-          +for test:  test_placeholder
-        :param reuse: To build train graph, reuse=False. To build validation graph and share weights with train graph, resue=True
+        :param: input_tensor_batch 3D tensor to input
+          + For train: ECG_placeholder;
+          + For test:  test_placeholder
+        :param reuse To build train graph, reuse=False.
+          + build test graph, reuse=False
+          + build validation graph and share weights with train graph, resue=True
 
-        :return: last layer in the network. Not softmax-ed
+        :return: last layer in the network. WITH-NO-SOFTMAX!!!
         '''
         layers = []
 
         # pre-define filter output number
-        filter_number = 16
+        filter_number = self.filter_init
+        # construct first conv layer: conv->bn->relu
         with tf.variable_scope('conv0', reuse=reuse):
             # conv layer
             conv0 = utils.conv(
               input_layer=input_tensor_batch,
-              filter_shape=[self.filter_Height,self.filter_Duration,self.filter_Depth,filter_number],
+              filter_shape=[self.filter_Duration,self.filter_Depth,filter_number],
               stride=1,
             )
             bn0 = utils.batch_norm(
@@ -275,23 +289,24 @@ class ECG_Classifier:
         elif self.WTFstanford == False:
             ''' repeat residual block 15 times '''
             print('-- We choose to use Stanford ResNet!!')
-            for i in range(self.residual_block_num*3):
+            for i in range(self.residual_block_num*3+1):
                 with tf.variable_scope('conv_layer_%d'%i, reuse=reuse):
                     if i == 0:
+                        # first residual block starts from conv layer
                         conv = utils.residual_block(
                           input_layer=layers[-1],
                           output_channel=filter_number,
-                          filter_height=self.filter_Height,
                           filter_duration = self.filter_Duration,
                           first_block=True,
                           WTFstanford=False
                         )
                     else:
+                        # else start from BN layer
                         conv = utils.residual_block(
                           input_layer=layers[-1],
                           output_channel=filter_number,
-                          filter_height=self.filter_Height,
                           filter_duration=self.filter_Duration,
+                          first_block=False,
                           WTFstanford=False
                         )
                 layers.append(conv)
@@ -304,7 +319,8 @@ class ECG_Classifier:
               output_channel = in_channel
             )
             fc_relu_layer = tf.nn.relu(fc_bn)
-            global_pool = tf.reduce_mean(fc_relu_layer,[1,2])
+            # global_pool = tf.reduce_mean(fc_relu_layer,[1,2])
+            global_pool = tf.reduce_mean(fc_relu_layer,axis=[1])
 
             fc_output = utils.linear(
               input_layer=global_pool,
@@ -340,5 +356,5 @@ class ECG_Classifier:
 
     def __accuracy(self, labels, logits):
         """tf.Sesssion运行该操作即可计算预测结果相比于label的准确率"""
-        accuracy = tf.equal(labels, tf.cast(tf.argmax(logits, 1),tf.int32))
+        accuracy = tf.equal(labels, tf.cast(tf.argmax(logits, 1), tf.int32))
         return tf.reduce_mean(tf.cast(accuracy, tf.float32))

@@ -9,7 +9,7 @@ import numpy as np
 import pickle
 import sys
 
-
+# TODO: define this function!!
 def load_all_data_to_memory():
     '''
     Load all data into memory
@@ -24,7 +24,7 @@ def load_all_data_to_memory():
 
 def prepare_train_data(offset, batch_size, total_num_data, all_data=None, all_labels=None):
     '''
-    data: 4D np.array [data_num, ECG_Height, ECG_duration, ECG_Channel]
+    data: 3D np.array [data_num, ECG_duration, ECG_Channel]
     label: 1D np.array [data_num]
 
 
@@ -45,9 +45,10 @@ def prepare_train_data(offset, batch_size, total_num_data, all_data=None, all_la
             labels = all_labels[-batch_size:-1]
         else:
             currentIdx = offset*batch_size
-            data = all_data[currentIdx:currentIdx+batch_size]
+            data = all_data[currentIdx:currentIdx+batch_size, ...]
             labels = all_labels[currentIdx:currentIdx+batch_size]
     else:
         sys.exit('data and labels are not loaded correctly!!!')
 
+    assert data.shape[0] == len(labels)
     return data,labels
